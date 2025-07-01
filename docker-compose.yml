@@ -1,76 +1,212 @@
 version: '3.8'
-
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.2.1
+    container_name: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   kafka:
     image: confluentinc/cp-kafka:7.2.1
+    container_name: kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9092:9092"
+      - "29092:29092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka:9092 --list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   mosquitto:
-    image: eclipse-mosquitto
+    image: eclipse-mosquitto:2.0
+    container_name: mosquitto
     ports:
       - "1883:1883"
+      - "9001:9001"
     volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-logs:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -t test -m 'health check' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   influxdb:
     image: influxdb:1.8
+    container_name: influxdb
     ports:
       - "8086:8086"
     volumes:
       - influxdb-data:/var/lib/influxdb
+      - ./influxdb.conf:/etc/influxdb/influxdb.conf:ro
     environment:
       INFLUXDB_DB: iot_data
+      INFLUXDB_ADMIN_USER: admin
+      INFLUXDB_ADMIN_PASSWORD: admin123
+      INFLUXDB_USER: iot_user
+      INFLUXDB_USER_PASSWORD: iot_password
+      INFLUXDB_HTTP_ENABLED: "true"
+      INFLUXDB_HTTP_BIND_ADDRESS: ":8086"
+      INFLUXDB_HTTP_AUTH_ENABLED: "false"
+      INFLUXDB_HTTP_LOG_ENABLED: "true"
+      INFLUXDB_HTTP_WRITE_TRACING: "false"
+      INFLUXDB_HTTP_PPROF_ENABLED: "true"
+      INFLUXDB_HTTP_HTTPS_ENABLED: "false"
+      INFLUXDB_HTTP_FLUX_ENABLED: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:latest
+    container_name: grafana
     ports:
       - "3000:3000"
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/iot-dashboard.json
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
 
   mqtt-kafka-bridge:
     build:
       context: ./mqtt-kafka-bridge
+      dockerfile: Dockerfile
+    container_name: mqtt-kafka-bridge
     depends_on:
-      - kafka
-      - mosquitto
+      kafka:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_PORT=1883
+
+  kafka-setup:
+    image: confluentinc/cp-kafka:7.2.1
+    container_name: kafka-setup
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./kafka-setup.sh:/kafka-setup.sh:ro
+    command: >
+      bash -c "
+        echo 'Setting up Kafka topics...' &&
+        sleep 15 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --topic iot-sensors --partitions 3 --replication-factor 1 --if-not-exists &&
+        echo 'Available Kafka topics:' &&
+        kafka-topics --bootstrap-server kafka:9092 --list &&
+        echo 'Testing Kafka producer...' &&
+        echo '{\"test\": \"setup_message\", \"timestamp\": \"'$(date -Iseconds)'\"}' | kafka-console-producer --bootstrap-server kafka:9092 --topic iot-sensors &&
+        echo 'Kafka setup complete!'
+      "
+    restart: "no"
+
+  data-simulator:
+    build:
+      context: ./data-simulator
+      dockerfile: Dockerfile
+    container_name: data-simulator
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    restart: unless-stopped
 
   spark:
     build:
       context: ./spark
+      dockerfile: Dockerfile
+    container_name: spark
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
     environment:
-      - PYSPARK_PYTHON=python
+      - PYSPARK_PYTHON=python3
+      - SPARK_MASTER_URL=local[*]
+      - SPARK_HOME=/opt/spark
+      - JAVA_HOME=/opt/java/openjdk
     ports:
       - "8888:8888"
+      - "4040:4040"
+    volumes:
+      - ./spark/notebooks:/opt/spark/notebooks
+      - ./spark/streaming_app.py:/opt/spark/streaming_app.py:ro
+      - ./spark/test_kafka.py:/opt/spark/test_kafka.py:ro
+    restart: unless-stopped
+    command: >
+      bash -c "
+        echo 'Waiting for dependencies...' &&
+        sleep 20 &&
+        echo 'Starting Spark streaming application...' &&
+        python3 /opt/spark/streaming_app.py
+      "
+
   mqtt-producer:
     build:
       context: ./mqtt-producer
+      dockerfile: Dockerfile
     container_name: mqtt-producer
     depends_on:
-      - mosquitto
+      mosquitto:
+        condition: service_healthy
     volumes:
-      - ./mqtt-producer:/app
+      - ./mqtt-producer:/app:ro
     working_dir: /app
-    command: python producer.py
+    command: python3 producer.py
+    restart: unless-stopped
+    environment:
+      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_PORT=1883
+
 volumes:
   influxdb-data:
+  grafana-data:
+  mosquitto-data:
+  mosquitto-logs:

@@ -6,4 +6,9 @@ datasources:
     access: proxy
     url: http://influxdb:8086
     database: iot_data
+    user: iot_user
+    password: iot_password
     isDefault: true
+    jsonData:
+      httpMode: GET
+    secureJsonData: {}
