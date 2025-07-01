@@ -1,0 +1,9 @@
+{
+  "name": "mqtt-kafka-bridge",
+  "version": "1.0.0",
+  "main": "bridge.js",
+  "dependencies": {
+    "mqtt": "^4.2.8",
+    "kafka-node": "^5.0.0"
+  }
+}

@@ -1,0 +1,207 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "IoT Sensor Dashboard",
+    "tags": ["iot", "sensors"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "5s",
+    "time": {
+      "from": "now-15m",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Temperature (°C)",
+        "type": "stat",
+        "targets": [
+          {
+            "query": "SELECT mean(temperature) FROM iot_data WHERE $timeFilter GROUP BY time(5s)",
+            "rawQuery": true,
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "blue", "value": null},
+                {"color": "green", "value": 20},
+                {"color": "yellow", "value": 25},
+                {"color": "red", "value": 30}
+              ]
+            },
+            "unit": "celsius"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Humidity (%)",
+        "type": "stat",
+        "targets": [
+          {
+            "query": "SELECT mean(humidity) FROM iot_data WHERE $timeFilter GROUP BY time(5s)",
+            "rawQuery": true,
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 40},
+                {"color": "green", "value": 60},
+                {"color": "blue", "value": 70}
+              ]
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Temperature & Humidity Over Time",
+        "type": "timeseries",
+        "targets": [
+          {
+            "query": "SELECT mean(temperature) FROM iot_data WHERE $timeFilter GROUP BY time(5s)",
+            "rawQuery": true,
+            "refId": "A"
+          },
+          {
+            "query": "SELECT mean(humidity) FROM iot_data WHERE $timeFilter GROUP BY time(5s)",
+            "rawQuery": true,
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Air Quality",
+        "type": "stat",
+        "targets": [
+          {
+            "query": "SELECT mean(air_quality) FROM iot_data WHERE $timeFilter GROUP BY time(5s)",
+            "rawQuery": true,
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 50},
+                {"color": "orange", "value": 100},
+                {"color": "red", "value": 150}
+              ]
+            },
+            "unit": "ppm"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "CO2 Level",
+        "type": "stat",
+        "targets": [
+          {
+            "query": "SELECT mean(co2) FROM iot_data WHERE $timeFilter GROUP BY time(5s)",
+            "rawQuery": true,
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 400},
+                {"color": "orange", "value": 600},
+                {"color": "red", "value": 800}
+              ]
+            },
+            "unit": "ppm"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Motion Detection",
+        "type": "stat",
+        "targets": [
+          {
+            "query": "SELECT mean(motion) FROM iot_data WHERE $timeFilter GROUP BY time(5s)",
+            "rawQuery": true,
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "red", "value": 0.5}
+              ]
+            },
+            "mappings": [
+              {"options": {"0": {"text": "No Motion"}}, "type": "value"},
+              {"options": {"1": {"text": "Motion Detected"}}, "type": "value"}
+            ]
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8}
+      },
+      {
+        "id": 7,
+        "title": "All Sensors Overview",
+        "type": "timeseries",
+        "targets": [
+          {
+            "query": "SELECT mean(temperature), mean(humidity), mean(pressure), mean(air_quality), mean(light), mean(sound_level), mean(co2), mean(battery_level) FROM iot_data WHERE $timeFilter GROUP BY time(10s)",
+            "rawQuery": true,
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}
+      }
+    ]
+  }
+} 
